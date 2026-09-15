@@ -1,6 +1,6 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, REST, Routes } = require("discord.js");
-const OpenAI = require("openai");
+const Groq = require("groq-sdk");
 
 const client = new Client({
   intents: [
@@ -10,8 +10,9 @@ const client = new Client({
   ]
 });
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_KEY
+// Groq API
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY
 });
 
 const OWNER_ID = process.env.OWNER_ID;
@@ -190,19 +191,26 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply("Voice message sent.");
   }
 
-  // AI
+  // AI (GROQ)
   if (interaction.commandName === "ai") {
     const prompt = interaction.options.getString("prompt");
 
-    const resposta = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: personalities[personality] },
-        { role: "user", content: prompt }
-      ]
-    });
+    try {
+      const resposta = await groq.chat.completions.create({
+        model: "llama3-8b-8192",
+        messages: [
+          { role: "system", content: personalities[personality] },
+          { role: "user", content: prompt }
+        ]
+      });
 
-    return interaction.reply(resposta.choices[0].message.content);
+      const texto = resposta.choices[0].message.content;
+      return interaction.reply(texto);
+
+    } catch (err) {
+      console.error(err);
+      return interaction.reply("⚠️ The AI service returned an error. Try again later.");
+    }
   }
 
   // SET PERSONALITY
