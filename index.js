@@ -72,6 +72,32 @@ const commands = [
     options: [
       { name: "text", type: 3, description: "Text to convert into voice", required: true }
     ]
+  },
+  {
+    name: "ai",
+    description: "Ask the AI something",
+    options: [
+      { name: "prompt", type: 3, description: "Your question", required: true }
+    ]
+  },
+  {
+    name: "setpersonality",
+    description: "Change the bot personality",
+    options: [
+      {
+        name: "type",
+        type: 3,
+        description: "Personality type",
+        required: true,
+        choices: [
+          { name: "normal", value: "normal" },
+          { name: "sarcastica", value: "sarcastica" },
+          { name: "sassy", value: "sassy" },
+          { name: "freaky", value: "freaky" },
+          { name: "formal", value: "formal" }
+        ]
+      }
+    ]
   }
 ];
 
@@ -95,51 +121,14 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
   }
 })();
 
-// ---------------------- MESSAGE COMMANDS ----------------------
-
-client.on("messageCreate", async (msg) => {
-  if (msg.author.bot) return;
-
-  // Change personality
-  if (msg.content.startsWith("!setpersonality")) {
-    if (msg.author.id !== OWNER_ID) {
-      return msg.reply("Only my creator can change my personality.");
-    }
-
-    const tipo = msg.content.split(" ")[1];
-
-    if (!personalities[tipo]) {
-      return msg.reply("Invalid personality. Use: normal, sarcastica, sassy, freaky, formal");
-    }
-
-    personality = tipo;
-    return msg.reply(`Personality changed to **${tipo}**.`);
-  }
-
-  // AI command
-  if (msg.content.startsWith("!ai")) {
-    const pergunta = msg.content.replace("!ai", "").trim();
-
-    const resposta = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: personalities[personality] },
-        { role: "user", content: pergunta }
-      ]
-    });
-
-    msg.reply(resposta.choices[0].message.content);
-  }
-});
-
 // ---------------------- SLASH COMMAND HANDLING ----------------------
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // Only owner can use these commands
-  if (interaction.user.id !== OWNER_ID) {
-    return interaction.reply("Only my creator can use this command.");
+  // Only owner can use admin commands
+  if (interaction.commandName === "setpersonality" && interaction.user.id !== OWNER_ID) {
+    return interaction.reply("Only my creator can change my personality.");
   }
 
   // CREATE EVENT
@@ -156,7 +145,7 @@ client.on("interactionCreate", async (interaction) => {
       entityType: 3
     });
 
-    interaction.reply(`Event **${name}** created.`);
+    return interaction.reply(`Event **${name}** created.`);
   }
 
   // DELETE EVENT
@@ -166,7 +155,7 @@ client.on("interactionCreate", async (interaction) => {
     const evento = await interaction.guild.scheduledEvents.fetch(id);
     await evento.delete();
 
-    interaction.reply("Event deleted.");
+    return interaction.reply("Event deleted.");
   }
 
   // POLL
@@ -185,7 +174,7 @@ client.on("interactionCreate", async (interaction) => {
       }
     });
 
-    interaction.reply("Poll created.");
+    return interaction.reply("Poll created.");
   }
 
   // VOICE MESSAGE
@@ -198,7 +187,30 @@ client.on("interactionCreate", async (interaction) => {
       }
     });
 
-    interaction.reply("Voice message sent.");
+    return interaction.reply("Voice message sent.");
+  }
+
+  // AI
+  if (interaction.commandName === "ai") {
+    const prompt = interaction.options.getString("prompt");
+
+    const resposta = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: personalities[personality] },
+        { role: "user", content: prompt }
+      ]
+    });
+
+    return interaction.reply(resposta.choices[0].message.content);
+  }
+
+  // SET PERSONALITY
+  if (interaction.commandName === "setpersonality") {
+    const tipo = interaction.options.getString("type");
+    personality = tipo;
+
+    return interaction.reply(`Personality changed to **${tipo}**.`);
   }
 });
 
