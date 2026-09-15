@@ -1,6 +1,6 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, REST, Routes } = require("discord.js");
-const Groq = require("groq-sdk");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const client = new Client({
   intents: [
@@ -10,10 +10,8 @@ const client = new Client({
   ]
 });
 
-// Groq API
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-});
+// Gemini API
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const OWNER_ID = process.env.OWNER_ID;
 
@@ -52,9 +50,6 @@ knowledgeable fellow player: direct, helpful, and happy to nerd out about the ga
 };
 
 // ---------------------- DEEPWOKEN WIKI LOOKUP ----------------------
-// Powers the "deepmaster" personality with real excerpts pulled live from
-// deepwoken.fandom.com's public MediaWiki API (no API key needed).
-// Requires Node 18+ for the built-in `fetch`.
 
 const WIKI_HEADERS = {
   "User-Agent": "MeuBotDiscord/1.0 (Deepwoken lookup; contact: you@example.com)"
@@ -177,8 +172,6 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-
-
   // CREATE EVENT
   if (interaction.commandName === "createevent") {
     const name = interaction.options.getString("name");
@@ -193,7 +186,7 @@ client.on("interactionCreate", async (interaction) => {
         scheduledEndTime: end,
         privacyLevel: 2,
         entityType: 3,
-        entityMetadata: { location } // required by Discord whenever entityType is EXTERNAL (3)
+        entityMetadata: { location }
       });
 
       return interaction.reply(`Event **${name}** created.`);
@@ -225,12 +218,12 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.channel.send({
       poll: {
-        question: { text: question }, // PollData.question is an object, not a raw string
+        question: { text: question },
         answers: [
           { text: op1 },
           { text: op2 }
         ],
-        duration: 24,           // hours - required field
+        duration: 24,
         allowMultiselect: false
       }
     });
@@ -254,8 +247,6 @@ client.on("interactionCreate", async (interaction) => {
     const minDelay = 300;
     const maxDelay = 1100;
     const winnerIndex = Math.floor(Math.random() * entries.length);
-    // Pick a start position so that, after (totalTicks - 1) forward steps
-    // around the circular list, the pointer lands exactly on winnerIndex.
     const startIndex = (((winnerIndex - (totalTicks - 1)) % entries.length) + entries.length) % entries.length;
 
     const renderSpinFrame = (highlightIndex) => ({
@@ -273,7 +264,7 @@ client.on("interactionCreate", async (interaction) => {
 
     for (let tick = 1; tick < totalTicks; tick++) {
       const t = tick / (totalTicks - 1);
-      const delay = minDelay + (maxDelay - minDelay) * Math.pow(t, 3); // ease into a stop
+      const delay = minDelay + (maxDelay - minDelay) * Math.pow(t, 3);
       await sleep(delay);
 
       const position = (startIndex + tick) % entries.length;
@@ -292,17 +283,14 @@ client.on("interactionCreate", async (interaction) => {
 
   // VOICE MESSAGE
   if (interaction.commandName === "voice") {
-    // There is no `voiceMessage` field in discord.js. A real Discord voice message
-    // needs an actual OGG/Opus audio attachment, a precomputed waveform, a duration,
-    // and the IS_VOICE_MESSAGE flag — plain text can't be sent this way as-is.
     return interaction.reply("⚠️ Voice messages aren't implemented yet — this needs a text-to-speech step first.");
   }
 
-  // AI (GROQ)
+  // AI (GEMINI)
   if (interaction.commandName === "ai") {
     const prompt = interaction.options.getString("prompt");
 
-    await interaction.deferReply(); // wiki lookups + the model call can take a moment
+    await interaction.deferReply();
 
     let systemContent = personalities[personality];
 
@@ -319,15 +307,14 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     try {
-      const resposta = await groq.chat.completions.create({
-        model: "openai/gpt-oss-20b", // llama-3.1-8b-instant was deprecated by Groq on 2026-08-16
-        messages: [
-          { role: "system", content: systemContent },
-          { role: "user", content: prompt }
-        ]
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        systemInstruction: systemContent
       });
 
-      const texto = resposta.choices[0].message.content;
+      const result = await model.generateContent(prompt);
+      const texto = result.response.text();
+      
       return interaction.editReply(texto);
 
     } catch (err) {
