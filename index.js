@@ -177,10 +177,7 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // Only owner can use admin commands
-  if (interaction.commandName === "setpersonality" && interaction.user.id !== OWNER_ID) {
-    return interaction.reply("Only my creator can change my personality.");
-  }
+
 
   // CREATE EVENT
   if (interaction.commandName === "createevent") {
