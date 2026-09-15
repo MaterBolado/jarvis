@@ -308,9 +308,9 @@ client.on("interactionCreate", async (interaction) => {
 
     try {
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        systemInstruction: systemContent
-      });
+  model: "gemini-3.6-flash", // Nome atualizado do modelo
+  systemInstruction: systemContent
+});
 
       const result = await model.generateContent(prompt);
       const texto = result.response.text();
