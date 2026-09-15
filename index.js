@@ -48,7 +48,8 @@ const commands = [
     options: [
       { name: "name", type: 3, description: "Event name", required: true },
       { name: "start", type: 3, description: "Start time (ISO format)", required: true },
-      { name: "end", type: 3, description: "End time (ISO format)", required: true }
+      { name: "end", type: 3, description: "End time (ISO format)", required: true },
+      { name: "location", type: 3, description: "Where the event happens", required: false }
     ]
   },
   {
@@ -137,26 +138,37 @@ client.on("interactionCreate", async (interaction) => {
     const name = interaction.options.getString("name");
     const start = interaction.options.getString("start");
     const end = interaction.options.getString("end");
+    const location = interaction.options.getString("location") || "Location TBA";
 
-    await interaction.guild.scheduledEvents.create({
-      name,
-      scheduledStartTime: start,
-      scheduledEndTime: end,
-      privacyLevel: 2,
-      entityType: 3
-    });
+    try {
+      await interaction.guild.scheduledEvents.create({
+        name,
+        scheduledStartTime: start,
+        scheduledEndTime: end,
+        privacyLevel: 2,
+        entityType: 3,
+        entityMetadata: { location } // required by Discord whenever entityType is EXTERNAL (3)
+      });
 
-    return interaction.reply(`Event **${name}** created.`);
+      return interaction.reply(`Event **${name}** created.`);
+    } catch (err) {
+      console.error(err);
+      return interaction.reply("⚠️ Couldn't create that event — check that start/end are valid ISO timestamps.");
+    }
   }
 
   // DELETE EVENT
   if (interaction.commandName === "deleteevent") {
     const id = interaction.options.getString("id");
 
-    const evento = await interaction.guild.scheduledEvents.fetch(id);
-    await evento.delete();
-
-    return interaction.reply("Event deleted.");
+    try {
+      const evento = await interaction.guild.scheduledEvents.fetch(id);
+      await evento.delete();
+      return interaction.reply("Event deleted.");
+    } catch (err) {
+      console.error(err);
+      return interaction.reply("⚠️ Couldn't find or delete an event with that ID.");
+    }
   }
 
   // POLL
@@ -167,11 +179,13 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.channel.send({
       poll: {
-        question,
+        question: { text: question }, // PollData.question is an object, not a raw string
         answers: [
           { text: op1 },
           { text: op2 }
-        ]
+        ],
+        duration: 24,           // hours - required field
+        allowMultiselect: false
       }
     });
 
@@ -180,15 +194,10 @@ client.on("interactionCreate", async (interaction) => {
 
   // VOICE MESSAGE
   if (interaction.commandName === "voice") {
-    const text = interaction.options.getString("text");
-
-    await interaction.channel.send({
-      voiceMessage: {
-        text
-      }
-    });
-
-    return interaction.reply("Voice message sent.");
+    // There is no `voiceMessage` field in discord.js. A real Discord voice message
+    // needs an actual OGG/Opus audio attachment, a precomputed waveform, a duration,
+    // and the IS_VOICE_MESSAGE flag — plain text can't be sent this way as-is.
+    return interaction.reply("⚠️ Voice messages aren't implemented yet — this needs a text-to-speech step first.");
   }
 
   // AI (GROQ)
@@ -197,7 +206,7 @@ client.on("interactionCreate", async (interaction) => {
 
     try {
       const resposta = await groq.chat.completions.create({
-        model: "llama-3.1-8b-instant",
+        model: "openai/gpt-oss-20b", // llama-3.1-8b-instant was deprecated by Groq on 2026-08-16
         messages: [
           { role: "system", content: personalities[personality] },
           { role: "user", content: prompt }
