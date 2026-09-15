@@ -287,7 +287,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   // AI (GEMINI)
-  if (interaction.commandName === "ai") {
+ if (interaction.commandName === "ai") {
     const prompt = interaction.options.getString("prompt");
 
     await interaction.deferReply();
@@ -308,14 +308,24 @@ client.on("interactionCreate", async (interaction) => {
 
     try {
       const model = genAI.getGenerativeModel({
-  model: "gemini-3.6-flash", // Nome atualizado do modelo
-  systemInstruction: systemContent
-});
+        model: "gemini-3.6-flash",
+        systemInstruction: systemContent
+      });
 
       const result = await model.generateContent(prompt);
       const texto = result.response.text();
-      
-      return interaction.editReply(texto);
+
+      // Divide a resposta em blocos de até 1900 caracteres para evitar o limite do Discord
+      if (texto.length <= 2000) {
+        return await interaction.editReply(texto);
+      }
+
+      const chunks = texto.match(/[\s\S]{1,1900}/g) || [texto];
+      await interaction.editReply(chunks[0]);
+
+      for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp(chunks[i]);
+      }
 
     } catch (err) {
       console.error(err);
