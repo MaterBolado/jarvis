@@ -197,7 +197,7 @@ client.on("interactionCreate", async (interaction) => {
 
     try {
       const resposta = await groq.chat.completions.create({
-        model: "mixtral-8x7b",
+        model: "llama-3.1-8b-instant",
         messages: [
           { role: "system", content: personalities[personality] },
           { role: "user", content: prompt }
