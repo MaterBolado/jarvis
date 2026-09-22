@@ -31,15 +31,34 @@ function songLabel(song) {
 // slash-command actions used by index.js. Call this once, right after the
 // Discord client is created.
 function setupMusic(client) {
-  // Tenta carregar cookies se existirem na pasta do projeto para evitar erro 429 do YouTube
+  // Tenta carregar cookies de cookies.json ou cookies.txt se existirem
   let cookies;
-  const cookiesPath = path.join(__dirname, "cookies.json");
-  if (fs.existsSync(cookiesPath)) {
+  const cookiesJsonPath = path.join(__dirname, "cookies.json");
+  const cookiesTxtPath = path.join(__dirname, "cookies.txt");
+
+  if (fs.existsSync(cookiesJsonPath)) {
     try {
-      cookies = JSON.parse(fs.readFileSync(cookiesPath, "utf-8"));
+      const content = fs.readFileSync(cookiesJsonPath, "utf-8");
+      // Tenta fazer parse se for um JSON Válido
+      try {
+        cookies = JSON.parse(content);
+      } catch {
+        // Se for texto simples (formato Netscape guardado num .json)
+        cookies = content;
+      }
+      console.log("✅ Cookies do YouTube carregados a partir de cookies.json!");
     } catch (e) {
-      console.error("Failed to parse cookies.json:", e);
+      console.error("❌ Erro ao ler cookies.json:", e);
     }
+  } else if (fs.existsSync(cookiesTxtPath)) {
+    try {
+      cookies = fs.readFileSync(cookiesTxtPath, "utf-8");
+      console.log("✅ Cookies do YouTube carregados a partir de cookies.txt!");
+    } catch (e) {
+      console.error("❌ Erro ao ler cookies.txt:", e);
+    }
+  } else {
+    console.warn("⚠️ Nenhum ficheiro de cookies encontrado. O YouTube pode bloquear a reprodução com erro 429 ou antibot.");
   }
 
   const youtubePluginOptions = {};
