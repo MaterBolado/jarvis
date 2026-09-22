@@ -1,14 +1,19 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, REST, Routes } = require("discord.js");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const setupMusic = require("./music.js");
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates // needed so the bot can see/join voice channels
   ]
 });
+
+// Music (YouTube / YouTube Music playback via DisTube)
+const music = setupMusic(client);
 
 // Gemini API
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -18,6 +23,60 @@ const OWNER_ID = process.env.OWNER_ID;
 // ---------------------- UTILITIES ----------------------
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Shared by all 4 music commands: makes sure the caller is in a voice
+// channel (warning them if not), then runs the given action and reports
+// back whether it worked.
+async function handleMusicCommand(interaction, action) {
+  const voiceChannel = interaction.member?.voice?.channel;
+  if (!voiceChannel) {
+    return interaction.reply({
+      content: "⚠️ You need to be in a voice channel first.",
+      ephemeral: true
+    });
+  }
+
+  const query = interaction.options.getString("query");
+  await interaction.deferReply();
+
+  try {
+    await action(voiceChannel, query, interaction);
+    await interaction.editReply("✅ Done!");
+  } catch (err) {
+    console.error("Music command failed:", err);
+    await interaction.editReply(`⚠️ ${err.message || "Something went wrong with that request."}`);
+  }
+}
+
+// Shared by /skip and /stop: makes sure something is actually playing and
+// the caller is in the same voice channel as the bot, then runs the action.
+async function handleQueueCommand(interaction, action, successMessage) {
+  const queue = music.distube.getQueue(interaction);
+  if (!queue) {
+    return interaction.reply({
+      content: "⚠️ Nothing is playing right now.",
+      ephemeral: true
+    });
+  }
+
+  const memberChannelId = interaction.member?.voice?.channel?.id;
+  if (!memberChannelId || memberChannelId !== queue.voice.channelId) {
+    return interaction.reply({
+      content: "⚠️ You need to be in the same voice channel as me to do that.",
+      ephemeral: true
+    });
+  }
+
+  await interaction.deferReply();
+
+  try {
+    await action(interaction);
+    await interaction.editReply(successMessage);
+  } catch (err) {
+    console.error("Music command failed:", err);
+    await interaction.editReply(`⚠️ ${err.message || "Something went wrong with that request."}`);
+  }
+}
 
 // ---------------------- PERSONALITIES ----------------------
 
@@ -110,6 +169,42 @@ const commands = [
     options: [
       { name: "entries", type: 3, description: "Names/options separated by commas (2-12)", required: true }
     ]
+  },
+  {
+    name: "music",
+    description: "Play a song by name or YouTube/YouTube Music link",
+    options: [
+      { name: "query", type: 3, description: "Song name or link", required: true }
+    ]
+  },
+  {
+    name: "playlist",
+    description: "Play a playlist, in order, by name or link",
+    options: [
+      { name: "query", type: 3, description: "Playlist name or link", required: true }
+    ]
+  },
+  {
+    name: "random",
+    description: "Play a song, then keep queueing similar songs",
+    options: [
+      { name: "query", type: 3, description: "Song name or link to base the mix on", required: true }
+    ]
+  },
+  {
+    name: "randomplaylist",
+    description: "Play a playlist, in random order, by name or link",
+    options: [
+      { name: "query", type: 3, description: "Playlist name or link", required: true }
+    ]
+  },
+  {
+    name: "skip",
+    description: "Skip the current song"
+  },
+  {
+    name: "stop",
+    description: "Stop playback and clear the queue"
   },
   {
     name: "voice",
@@ -279,6 +374,44 @@ client.on("interactionCreate", async (interaction) => {
         color: 0xf1c40f
       }]
     });
+  }
+
+  // MUSIC
+  if (interaction.commandName === "music") {
+    return handleMusicCommand(interaction, (voiceChannel, query, i) =>
+      music.playTrack(voiceChannel, query, i)
+    );
+  }
+
+  // PLAYLIST
+  if (interaction.commandName === "playlist") {
+    return handleMusicCommand(interaction, (voiceChannel, query, i) =>
+      music.playPlaylist(voiceChannel, query, i)
+    );
+  }
+
+  // RANDOM (similar songs / mix)
+  if (interaction.commandName === "random") {
+    return handleMusicCommand(interaction, (voiceChannel, query, i) =>
+      music.playRandomMix(voiceChannel, query, i)
+    );
+  }
+
+  // RANDOM PLAYLIST (shuffled order)
+  if (interaction.commandName === "randomplaylist") {
+    return handleMusicCommand(interaction, (voiceChannel, query, i) =>
+      music.playShuffledPlaylist(voiceChannel, query, i)
+    );
+  }
+
+  // SKIP
+  if (interaction.commandName === "skip") {
+    return handleQueueCommand(interaction, (i) => music.skip(i), "⏭️ Skipped.");
+  }
+
+  // STOP
+  if (interaction.commandName === "stop") {
+    return handleQueueCommand(interaction, (i) => music.stop(i), "⏹️ Stopped and cleared the queue.");
   }
 
   // VOICE MESSAGE
