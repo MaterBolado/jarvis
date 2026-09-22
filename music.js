@@ -41,18 +41,18 @@ function setupMusic(client) {
     }
   }
 
-  // Configuração do YouTubePlugin com fallbacks e clients alternativos
+  // Configura o plugin com os clientes alternativos do YouTube
   const youtubePlugin = new YouTubePlugin({
     cookies: cookies,
     ytdlOptions: {
       highWaterMark: 1 << 24,
-      liveBuffer: 49000,
-      heartbeatIntervalMs: 30000,
       quality: "highestaudio",
-      // Alterna o cliente para TV/Mobile para contornar o "Failed to find any playable formats"
-      agentOptions: {
-        pipelining: 1,
-        maxRedirections: 5
+      // Força a utilização de clientes mobile/TV para evitar o erro de formatos
+      client: ["IOS", "ANDROID", "TVHTML5"],
+      requestOptions: {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+        }
       }
     }
   });
