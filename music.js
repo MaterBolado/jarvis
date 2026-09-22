@@ -42,7 +42,7 @@ function setupMusic(client) {
     }
   }
 
-  // Cria um agente de rede customizado no ytdl-core para contornar o erro de parsing do watch.html
+  // Cria o agente de rede com os cookies
   let agent;
   try {
     agent = ytdl.createAgent(cookies || []);
@@ -50,12 +50,12 @@ function setupMusic(client) {
     console.error("❌ Erro ao criar o agente do ytdl:", e.message);
   }
 
+  // Passa o agent e as opções diretamente dentro de ytdlOptions
   const youtubePlugin = new YouTubePlugin({
-    agent: agent,
     ytdlOptions: {
+      agent: agent,
       highWaterMark: 1 << 24,
       quality: "highestaudio",
-      // Força a utilização de clientes móveis/TV para não depender da estrutura HTML da web
       client: ["IOS", "ANDROID", "TVHTML5"]
     }
   });
