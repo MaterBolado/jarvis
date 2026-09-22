@@ -1,5 +1,6 @@
 const { DisTube, isURL } = require("distube");
 const { YouTubePlugin, SearchResultType } = require("@distube/youtube");
+const ytdl = require("@distube/ytdl-core");
 const ffmpegPath = require("ffmpeg-static");
 const fs = require("fs");
 const path = require("path");
@@ -41,19 +42,21 @@ function setupMusic(client) {
     }
   }
 
-  // Configura o plugin com os clientes alternativos do YouTube
+  // Cria um agente de rede customizado no ytdl-core para contornar o erro de parsing do watch.html
+  let agent;
+  try {
+    agent = ytdl.createAgent(cookies || []);
+  } catch (e) {
+    console.error("❌ Erro ao criar o agente do ytdl:", e.message);
+  }
+
   const youtubePlugin = new YouTubePlugin({
-    cookies: cookies,
+    agent: agent,
     ytdlOptions: {
       highWaterMark: 1 << 24,
       quality: "highestaudio",
-      // Força a utilização de clientes mobile/TV para evitar o erro de formatos
-      client: ["IOS", "ANDROID", "TVHTML5"],
-      requestOptions: {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
-        }
-      }
+      // Força a utilização de clientes móveis/TV para não depender da estrutura HTML da web
+      client: ["IOS", "ANDROID", "TVHTML5"]
     }
   });
 
