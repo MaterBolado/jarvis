@@ -1,6 +1,8 @@
 const { DisTube, isURL } = require("distube");
 const { YouTubePlugin, SearchResultType } = require("@distube/youtube");
 const ffmpegPath = require("ffmpeg-static");
+const fs = require("fs");
+const path = require("path");
 
 // How many extra "similar" tracks /random lines up immediately, on top of the
 // seed song. Autoplay stays on afterwards, so the mix keeps going past this.
@@ -29,7 +31,23 @@ function songLabel(song) {
 // slash-command actions used by index.js. Call this once, right after the
 // Discord client is created.
 function setupMusic(client) {
-  const youtubePlugin = new YouTubePlugin();
+  // Tenta carregar cookies se existirem na pasta do projeto para evitar erro 429 do YouTube
+  let cookies;
+  const cookiesPath = path.join(__dirname, "cookies.json");
+  if (fs.existsSync(cookiesPath)) {
+    try {
+      cookies = JSON.parse(fs.readFileSync(cookiesPath, "utf-8"));
+    } catch (e) {
+      console.error("Failed to parse cookies.json:", e);
+    }
+  }
+
+  const youtubePluginOptions = {};
+  if (cookies) {
+    youtubePluginOptions.cookies = cookies;
+  }
+
+  const youtubePlugin = new YouTubePlugin(youtubePluginOptions);
 
   const distube = new DisTube(client, {
     plugins: [youtubePlugin],
