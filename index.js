@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits, REST, Routes, MessageFlags } = require("discord.js");
+const { Client, GatewayIntentBits, REST, Routes } = require("discord.js");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const setupMusic = require("./music.js");
 
@@ -32,7 +32,7 @@ async function handleMusicCommand(interaction, action) {
   if (!voiceChannel) {
     return interaction.reply({
       content: "⚠️ You need to be in a voice channel first.",
-      flags: MessageFlags.Ephemeral
+      ephemeral: true
     });
   }
 
@@ -55,7 +55,7 @@ async function handleQueueCommand(interaction, action, successMessage) {
   if (!queue) {
     return interaction.reply({
       content: "⚠️ Nothing is playing right now.",
-      flags: MessageFlags.Ephemeral
+      ephemeral: true
     });
   }
 
@@ -63,7 +63,7 @@ async function handleQueueCommand(interaction, action, successMessage) {
   if (!memberChannelId || memberChannelId !== queue.voice.channelId) {
     return interaction.reply({
       content: "⚠️ You need to be in the same voice channel as me to do that.",
-      flags: MessageFlags.Ephemeral
+      ephemeral: true
     });
   }
 
@@ -420,7 +420,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   // AI (GEMINI)
-  if (interaction.commandName === "ai") {
+ if (interaction.commandName === "ai") {
     const prompt = interaction.options.getString("prompt");
 
     await interaction.deferReply();
