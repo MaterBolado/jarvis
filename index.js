@@ -1,82 +1,25 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits, REST, Routes, MessageFlags } = require("discord.js");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const setupMusic = require("./music.js");
+const { Client, GatewayIntentBits, REST, Routes } = require("discord.js");
+const Groq = require("groq-sdk");
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates // needed so the bot can see/join voice channels
+    GatewayIntentBits.MessageContent
   ]
 });
 
-// Music: Spotify links & search, backed by YouTube for actual playback (see music.js)
-const music = setupMusic(client);
-
-// Gemini API
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Groq API
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY
+});
 
 const OWNER_ID = process.env.OWNER_ID;
 
 // ---------------------- UTILITIES ----------------------
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Shared by all 4 music commands: makes sure the caller is in a voice
-// channel (warning them if not), then runs the given action and reports
-// back whether it worked.
-async function handleMusicCommand(interaction, action) {
-  const voiceChannel = interaction.member?.voice?.channel;
-  if (!voiceChannel) {
-    return interaction.reply({
-      content: "⚠️ You need to be in a voice channel first.",
-      flags: MessageFlags.Ephemeral
-    });
-  }
-
-  const query = interaction.options.getString("query");
-  await interaction.deferReply();
-
-  try {
-    await action(voiceChannel, query, interaction);
-    await interaction.editReply("✅ Done!");
-  } catch (err) {
-    console.error("Music command failed:", err);
-    await interaction.editReply(`⚠️ ${err.message || "Something went wrong with that request."}`);
-  }
-}
-
-// Shared by /skip and /stop: makes sure something is actually playing and
-// the caller is in the same voice channel as the bot, then runs the action.
-async function handleQueueCommand(interaction, action, successMessage) {
-  const queue = music.distube.getQueue(interaction);
-  if (!queue) {
-    return interaction.reply({
-      content: "⚠️ Nothing is playing right now.",
-      flags: MessageFlags.Ephemeral
-    });
-  }
-
-  const memberChannelId = interaction.member?.voice?.channel?.id;
-  if (!memberChannelId || memberChannelId !== queue.voice.channelId) {
-    return interaction.reply({
-      content: "⚠️ You need to be in the same voice channel as me to do that.",
-      flags: MessageFlags.Ephemeral
-    });
-  }
-
-  await interaction.deferReply();
-
-  try {
-    await action(interaction);
-    await interaction.editReply(successMessage);
-  } catch (err) {
-    console.error("Music command failed:", err);
-    await interaction.editReply(`⚠️ ${err.message || "Something went wrong with that request."}`);
-  }
-}
 
 // ---------------------- PERSONALITIES ----------------------
 
@@ -109,6 +52,9 @@ knowledgeable fellow player: direct, helpful, and happy to nerd out about the ga
 };
 
 // ---------------------- DEEPWOKEN WIKI LOOKUP ----------------------
+// Powers the "deepmaster" personality with real excerpts pulled live from
+// deepwoken.fandom.com's public MediaWiki API (no API key needed).
+// Requires Node 18+ for the built-in `fetch`.
 
 const WIKI_HEADERS = {
   "User-Agent": "MeuBotDiscord/1.0 (Deepwoken lookup; contact: you@example.com)"
@@ -171,42 +117,6 @@ const commands = [
     ]
   },
   {
-    name: "music",
-    description: "Play a song by name, Spotify link, or YouTube link",
-    options: [
-      { name: "query", type: 3, description: "Song name or link", required: true }
-    ]
-  },
-  {
-    name: "playlist",
-    description: "Play a playlist, in order, by name, Spotify link, or YouTube link",
-    options: [
-      { name: "query", type: 3, description: "Playlist name or link", required: true }
-    ]
-  },
-  {
-    name: "random",
-    description: "Play a song by name or link (Spotify or YouTube), then queue similar songs",
-    options: [
-      { name: "query", type: 3, description: "Song name or link to base the mix on", required: true }
-    ]
-  },
-  {
-    name: "randomplaylist",
-    description: "Play a playlist, in random order, by name, Spotify link, or YouTube link",
-    options: [
-      { name: "query", type: 3, description: "Playlist name or link", required: true }
-    ]
-  },
-  {
-    name: "skip",
-    description: "Skip the current song"
-  },
-  {
-    name: "stop",
-    description: "Stop playback and clear the queue"
-  },
-  {
     name: "voice",
     description: "Send a voice message",
     options: [
@@ -267,6 +177,8 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
+
+
   // CREATE EVENT
   if (interaction.commandName === "createevent") {
     const name = interaction.options.getString("name");
@@ -281,7 +193,7 @@ client.on("interactionCreate", async (interaction) => {
         scheduledEndTime: end,
         privacyLevel: 2,
         entityType: 3,
-        entityMetadata: { location }
+        entityMetadata: { location } // required by Discord whenever entityType is EXTERNAL (3)
       });
 
       return interaction.reply(`Event **${name}** created.`);
@@ -313,12 +225,12 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.channel.send({
       poll: {
-        question: { text: question },
+        question: { text: question }, // PollData.question is an object, not a raw string
         answers: [
           { text: op1 },
           { text: op2 }
         ],
-        duration: 24,
+        duration: 24,           // hours - required field
         allowMultiselect: false
       }
     });
@@ -342,6 +254,8 @@ client.on("interactionCreate", async (interaction) => {
     const minDelay = 300;
     const maxDelay = 1100;
     const winnerIndex = Math.floor(Math.random() * entries.length);
+    // Pick a start position so that, after (totalTicks - 1) forward steps
+    // around the circular list, the pointer lands exactly on winnerIndex.
     const startIndex = (((winnerIndex - (totalTicks - 1)) % entries.length) + entries.length) % entries.length;
 
     const renderSpinFrame = (highlightIndex) => ({
@@ -359,7 +273,7 @@ client.on("interactionCreate", async (interaction) => {
 
     for (let tick = 1; tick < totalTicks; tick++) {
       const t = tick / (totalTicks - 1);
-      const delay = minDelay + (maxDelay - minDelay) * Math.pow(t, 3);
+      const delay = minDelay + (maxDelay - minDelay) * Math.pow(t, 3); // ease into a stop
       await sleep(delay);
 
       const position = (startIndex + tick) % entries.length;
@@ -376,54 +290,19 @@ client.on("interactionCreate", async (interaction) => {
     });
   }
 
-  // MUSIC
-  if (interaction.commandName === "music") {
-    return handleMusicCommand(interaction, (voiceChannel, query, i) =>
-      music.playTrack(voiceChannel, query, i)
-    );
-  }
-
-  // PLAYLIST
-  if (interaction.commandName === "playlist") {
-    return handleMusicCommand(interaction, (voiceChannel, query, i) =>
-      music.playPlaylist(voiceChannel, query, i)
-    );
-  }
-
-  // RANDOM (similar songs / mix)
-  if (interaction.commandName === "random") {
-    return handleMusicCommand(interaction, (voiceChannel, query, i) =>
-      music.playRandomMix(voiceChannel, query, i)
-    );
-  }
-
-  // RANDOM PLAYLIST (shuffled order)
-  if (interaction.commandName === "randomplaylist") {
-    return handleMusicCommand(interaction, (voiceChannel, query, i) =>
-      music.playShuffledPlaylist(voiceChannel, query, i)
-    );
-  }
-
-  // SKIP
-  if (interaction.commandName === "skip") {
-    return handleQueueCommand(interaction, (i) => music.skip(i), "⏭️ Skipped.");
-  }
-
-  // STOP
-  if (interaction.commandName === "stop") {
-    return handleQueueCommand(interaction, (i) => music.stop(i), "⏹️ Stopped and cleared the queue.");
-  }
-
   // VOICE MESSAGE
   if (interaction.commandName === "voice") {
+    // There is no `voiceMessage` field in discord.js. A real Discord voice message
+    // needs an actual OGG/Opus audio attachment, a precomputed waveform, a duration,
+    // and the IS_VOICE_MESSAGE flag — plain text can't be sent this way as-is.
     return interaction.reply("⚠️ Voice messages aren't implemented yet — this needs a text-to-speech step first.");
   }
 
-  // AI (GEMINI)
+  // AI (GROQ)
   if (interaction.commandName === "ai") {
     const prompt = interaction.options.getString("prompt");
 
-    await interaction.deferReply();
+    await interaction.deferReply(); // wiki lookups + the model call can take a moment
 
     let systemContent = personalities[personality];
 
@@ -440,25 +319,16 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     try {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-3.6-flash",
-        systemInstruction: systemContent
+      const resposta = await groq.chat.completions.create({
+        model: "openai/gpt-oss-20b", // llama-3.1-8b-instant was deprecated by Groq on 2026-08-16
+        messages: [
+          { role: "system", content: systemContent },
+          { role: "user", content: prompt }
+        ]
       });
 
-      const result = await model.generateContent(prompt);
-      const texto = result.response.text();
-
-      // Divide a resposta em blocos de até 1900 caracteres para evitar o limite do Discord
-      if (texto.length <= 2000) {
-        return await interaction.editReply(texto);
-      }
-
-      const chunks = texto.match(/[\s\S]{1,1900}/g) || [texto];
-      await interaction.editReply(chunks[0]);
-
-      for (let i = 1; i < chunks.length; i++) {
-        await interaction.followUp(chunks[i]);
-      }
+      const texto = resposta.choices[0].message.content;
+      return interaction.editReply(texto);
 
     } catch (err) {
       console.error(err);
